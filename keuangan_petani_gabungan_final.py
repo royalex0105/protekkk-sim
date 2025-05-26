@@ -6,15 +6,12 @@ import os
 import hashlib
 import pandas as pd
 
-
-
 # ---------------- Helper Functions ----------------
 
 def hash_password(password):
     return hashlib.sha256(password.encode()).hexdigest()
 
 def get_user_file(base_filename, username):
-    # contoh: pemasukan_user1.csv
     name, ext = os.path.splitext(base_filename)
     return f"{name}_{username}{ext}"
 
@@ -24,7 +21,6 @@ def load_data(base_filename, username):
         try:
             return pd.read_csv(filename)
         except pd.errors.EmptyDataError:
-            # Jika file kosong, buat DataFrame kosong dengan kolom sesuai file yang dipakai
             if "pemasukan" in filename:
                 return pd.DataFrame(columns=["Tanggal", "Sumber", "Jumlah", "Metode", "Keterangan", "Username"])
             elif "pengeluaran" in filename:
@@ -34,7 +30,6 @@ def load_data(base_filename, username):
             else:
                 return pd.DataFrame()
     else:
-        # Jika file belum ada, buat DataFrame kosong dengan kolom sesuai file
         if "pemasukan" in base_filename:
             return pd.DataFrame(columns=["Tanggal", "Sumber", "Jumlah", "Metode", "Keterangan", "Username"])
         elif "pengeluaran" in base_filename:
@@ -71,7 +66,7 @@ def save_user_accounts(df):
 def register_user(username, password):
     akun_df = load_user_accounts()
     if (akun_df['Username'] == username).any():
-        return False  # Username sudah ada
+        return False
     akun_df = pd.concat([akun_df, pd.DataFrame([{"Username": username, "Password": hash_password(password)}])], ignore_index=True)
     save_user_accounts(akun_df)
     return True
@@ -80,8 +75,6 @@ def validate_login(username, password):
     akun_df = load_user_accounts()
     hashed_pw = hash_password(password)
     return ((akun_df['Username'] == username) & (akun_df['Password'] == hashed_pw)).any()
-
-import streamlit as st
 
 # ---------------- Login & Register ----------------
 
@@ -112,7 +105,7 @@ def login_register():
             else:
                 st.error("Username atau password salah.")
 
-    else:  # Daftar
+    else:
         if st.button("Daftar"):
             if username.strip() == "" or password.strip() == "":
                 st.error("Harap isi semua kolom.")
@@ -123,7 +116,6 @@ def login_register():
 
     st.stop()
     return False
-
 
 # ---------------- Data Kategori ----------------
 
@@ -303,32 +295,29 @@ def laporan():
 
     jurnal_df = jurnal_df[(jurnal_df['Tanggal'] >= pd.to_datetime(mulai)) & (jurnal_df['Tanggal'] <= pd.to_datetime(akhir))]
 
-    tabs = st.tabs(["Ringkasan", "Jurnal Umum", "Buku Besar", "Laba Rugi", "Neraca"])
-    
+    tabs = st.tabs(["Ringkasan", "Jurnal Umum", "Buku Besar", "Laba Rugi", "Neraca", "Hapus Transaksi"])
     
     with tabs[0]:
-         total_pemasukan = pemasukan_df[
-         (pemasukan_df['Tanggal'] >= pd.to_datetime(mulai)) & 
-         (pemasukan_df['Tanggal'] <= pd.to_datetime(akhir))
-         ]['Jumlah'].sum() if not pemasukan_df.empty else 0
+        total_pemasukan = pemasukan_df[
+            (pemasukan_df['Tanggal'] >= pd.to_datetime(mulai)) & 
+            (pemasukan_df['Tanggal'] <= pd.to_datetime(akhir))
+        ]['Jumlah'].sum() if not pemasukan_df.empty else 0
          
-         total_pengeluaran = pengeluaran_df[
-        (pengeluaran_df['Tanggal'] >= pd.to_datetime(mulai)) & 
-        (pengeluaran_df['Tanggal'] <= pd.to_datetime(akhir))
-    ]['Jumlah'].sum() if not pengeluaran_df.empty else 0
+        total_pengeluaran = pengeluaran_df[
+            (pengeluaran_df['Tanggal'] >= pd.to_datetime(mulai)) & 
+            (pengeluaran_df['Tanggal'] <= pd.to_datetime(akhir))
+        ]['Jumlah'].sum() if not pengeluaran_df.empty else 0
 
-    st.metric("Total Pemasukan", f"Rp {total_pemasukan:,.0f}")
-    st.metric("Total Pengeluaran", f"Rp {total_pengeluaran:,.0f}")
+        st.metric("Total Pemasukan", f"Rp {total_pemasukan:,.0f}")
+        st.metric("Total Pengeluaran", f"Rp {total_pengeluaran:,.0f}")
 
-    if total_pemasukan > 0 or total_pengeluaran > 0:
-        df_sum = pd.DataFrame({
-            'Kategori': ['Pemasukan', 'Pengeluaran'],
-            'Jumlah': [total_pemasukan, total_pengeluaran]
-        })
-        fig = px.pie(df_sum, values='Jumlah', names='Kategori')
-        st.plotly_chart(fig)
-
-
+        if total_pemasukan > 0 or total_pengeluaran > 0:
+            df_sum = pd.DataFrame({
+                'Kategori': ['Pemasukan', 'Pengeluaran'],
+                'Jumlah': [total_pemasukan, total_pengeluaran]
+            })
+            fig = px.pie(df_sum, values='Jumlah', names='Kategori')
+            st.plotly_chart(fig)
 
     with tabs[1]:
         st.markdown("### Jurnal Umum")
@@ -346,41 +335,84 @@ def laporan():
                 st.dataframe(df_akun)
 
     with tabs[3]:
+        st.subheader("Laporan Laba Rugi")
+        
         pendapatan = jurnal_df[jurnal_df['Akun'].str.contains("Pendapatan")]['Kredit'].sum() if not jurnal_df.empty else 0
         beban = jurnal_df[~jurnal_df['Akun'].isin(['Kas', 'Bank', 'Piutang Dagang', 'Utang Dagang', 'Pendapatan'])]['Debit'].sum() if not jurnal_df.empty else 0
         laba_rugi = pendapatan - beban
-        st.metric("Pendapatan", f"Rp {pendapatan:,.0f}")
-        st.metric("Beban", f"Rp {beban:,.0f}")
+        
+        # Tabel Laba Rugi
+        lr_data = [
+            {"Kategori": "Pendapatan", "Jumlah": f"Rp {pendapatan:,.0f}"},
+            {"Kategori": "Beban", "Jumlah": f"Rp {beban:,.0f}"},
+            {"Kategori": "Laba/Rugi", "Jumlah": f"Rp {laba_rugi:,.0f}"}
+        ]
+        st.table(pd.DataFrame(lr_data))
+        
         st.metric("Laba / Rugi", f"Rp {laba_rugi:,.0f}")
 
     with tabs[4]:
+        st.subheader("Neraca")
+        
         aktiva = jurnal_df[jurnal_df['Akun'].isin(['Kas', 'Bank', 'Piutang Dagang'])]['Debit'].sum() - jurnal_df[jurnal_df['Akun'].isin(['Kas', 'Bank', 'Piutang Dagang'])]['Kredit'].sum() if not jurnal_df.empty else 0
         kewajiban = jurnal_df[jurnal_df['Akun'].isin(['Utang Dagang'])]['Kredit'].sum() - jurnal_df[jurnal_df['Akun'].isin(['Utang Dagang'])]['Debit'].sum() if not jurnal_df.empty else 0
         ekuitas = laba_rugi
-        st.metric("Aktiva", f"Rp {aktiva:,.0f}")
-        st.metric("Kewajiban", f"Rp {kewajiban:,.0f}")
-        st.metric("Ekuitas", f"Rp {ekuitas:,.0f}")
-    
-    if not pemasukan_df.empty and 'Username' in pemasukan_df.columns:
-        pemasukan_df = pemasukan_df[pemasukan_df['Username'] == username]
-    if not pengeluaran_df.empty and 'Username' in pengeluaran_df.columns:
-        pengeluaran_df = pengeluaran_df[pengeluaran_df['Username'] == username]
-    if not jurnal_df.empty and 'Username' in jurnal_df.columns:
-        jurnal_df = jurnal_df[jurnal_df['Username'] == username]
+        
+        # Tabel Neraca
+        neraca_data = [
+            {"Kategori": "Aktiva", "Jumlah": f"Rp {aktiva:,.0f}"},
+            {"Kategori": "Kewajiban", "Jumlah": f"Rp {kewajiban:,.0f}"},
+            {"Kategori": "Ekuitas", "Jumlah": f"Rp {ekuitas:,.0f}"},
+            {"Kategori": "Total", "Jumlah": f"Rp {aktiva + kewajiban + ekuitas:,.0f}"}
+        ]
+        st.table(pd.DataFrame(neraca_data))
+        
+        st.metric("Total Aset", f"Rp {aktiva:,.0f}")
+
+    with tabs[5]:
+        st.subheader("Hapus Transaksi")
+        
+        # Pemasukan
+        st.write("### Daftar Pemasukan")
+        pemasukan_display = pemasukan_df.copy()
+        pemasukan_display['Tanggal'] = pd.to_datetime(pemasukan_display['Tanggal']).dt.date
+        st.dataframe(pemasukan_display)
+        
+        if not pemasukan_df.empty:
+            idx_pemasukan = st.selectbox("Pilih Pemasukan untuk dihapus", pemasukan_df.index)
+            if st.button("Hapus Pemasukan Terpilih"):
+                if hapus_transaksi("pemasukan", idx_pemasukan, username):
+                    st.success("Pemasukan berhasil dihapus!")
+                    st.rerun()
+                else:
+                    st.error("Gagal menghapus pemasukan")
+        
+        # Pengeluaran
+        st.write("### Daftar Pengeluaran")
+        pengeluaran_display = pengeluaran_df.copy()
+        pengeluaran_display['Tanggal'] = pd.to_datetime(pengeluaran_display['Tanggal']).dt.date
+        st.dataframe(pengeluaran_display)
+        
+        if not pengeluaran_df.empty:
+            idx_pengeluaran = st.selectbox("Pilih Pengeluaran untuk dihapus", pengeluaran_df.index)
+            if st.button("Hapus Pengeluaran Terpilih"):
+                if hapus_transaksi("pengeluaran", idx_pengeluaran, username):
+                    st.success("Pengeluaran berhasil dihapus!")
+                    st.rerun()
+                else:
+                    st.error("Gagal menghapus pengeluaran")
 
 # ---------------- UI Utama ----------------
 
 def main():
-    st.set_page_config(layout="wide")  # Pastikan ada konfigurasi dasar
+    st.set_page_config(layout="wide")
    
-    # Logo kecil di header (ganti dengan URL/logo sendiri jika ada)
     st.sidebar.title("Menu")
     
     logged_in = login_register()
     if not logged_in:
         return
 
-    
     menu = st.sidebar.radio("Pilih Menu", ["Beranda", "Pemasukan", "Pengeluaran", "Laporan", "Logout"])
 
     if menu == "Beranda":
@@ -390,6 +422,7 @@ def main():
         st.markdown("- Jurnal umum otomatis")
         st.markdown("- Buku besar")
         st.markdown("- Laporan laba rugi dan neraca")
+        st.markdown("- Fitur penghapusan transaksi")
         st.markdown("Gunakan menu di sebelah kiri untuk navigasi.")
 
     elif menu == "Pemasukan":
@@ -399,7 +432,7 @@ def main():
         pengeluaran()
 
     elif menu == "Laporan":
-        laporan() # Grafik Plotly hanya ada di fungsi laporan()
+        laporan()
 
     elif menu == "Logout":
         st.session_state['logged_in'] = False
